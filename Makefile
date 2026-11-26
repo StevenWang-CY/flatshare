@@ -9,11 +9,11 @@ VLLM_REF := v0.32.0
 VLLM_SRC ?= $(HOME)/.cache/flatshare/vllm-$(VLLM_REF)
 # Every Python package except the engine variants' tests (test-vllm); each one has a `test` extra.
 PY_PACKAGES := $(filter-out python/flatshare_vllm,$(patsubst %/pyproject.toml,%,$(wildcard python/*/pyproject.toml)))
-# The Python that make lint checks: the packages, and the scripts of flatshare-sim, E2, the A100 run, the replies' and
-# the CPU audio's measures, the quality gate, the deployment (the hosts' scripts without a suffix among them, found by
+# The Python that make lint checks: the packages, and the scripts of flatshare-sim, E2, the A100 run, the voice
+# pipeline's measures, the quality gate, the deployment (the hosts' scripts without a suffix among them, found by
 # their shebang) and the engine variants (not the recorded runs' own scripts under benchmarks/results).
 PY_SOURCES := python crates/flatshare-sim/scripts $(sort $(wildcard benchmarks/e2/*.py benchmarks/a100/*.py \
-  benchmarks/replies/*.py benchmarks/audio/*.py benchmarks/quality/*.py benchmarks/endpointing/*.py \
+  benchmarks/voice/*.py benchmarks/quality/*.py \
   benchmarks/fp8/*.py benchmarks/fp8/diag/*.py deploy/*.py \
   deploy/bin/*.py deploy/a100/*.py deploy/container/*.py \
   deploy/phastform/variants/*/*.py) \

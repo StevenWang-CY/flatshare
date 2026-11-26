@@ -3,7 +3,7 @@
 make-room's prefill hold keeps lower-priority prefill out of a realtime request's first `budget_cap_tokens` tokens, the
 window, so that the reply's first sentence, which the voice agent hands to speech synthesis, decodes on steps of its
 own. The window has to cover that sentence. The E2 records keep each reply's token count but not its text, so
-[`benchmarks/replies/first_sentence.py`](../../replies/first_sentence.py) asked the engine for the agent's replies
+[`benchmarks/voice/first_sentence.py`](../../voice/first_sentence.py) asked the engine for the agent's replies
 again and counted each reply's tokens up to the one that completes its first sentence.
 
 | Replies | First sentence, tokens: median | p95 | Most | Within 16 tokens | Within 48 tokens | Whole reply: median | Most |
@@ -37,6 +37,6 @@ again and counted each reply's tokens up to the one that completes its first sen
 With the engine on its socket:
 
 ```sh
-python benchmarks/replies/first_sentence.py --engine unix:$XDG_RUNTIME_DIR/flatshare/engine.sock \
+python benchmarks/voice/first_sentence.py --engine unix:$XDG_RUNTIME_DIR/flatshare/engine.sock \
   --out benchmarks/results/2026-10-27-first-sentence
 ```

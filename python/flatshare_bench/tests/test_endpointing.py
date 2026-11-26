@@ -1,4 +1,4 @@
-"""The endpointing sweep (benchmarks/endpointing): its summary's table from a sweep's records, made by hand here."""
+"""The endpointing sweep (benchmarks/voice): its summary's table from a sweep's records, made by hand here."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from types import ModuleType
 
 REPO = Path(__file__).resolve().parents[3]
-SUMMARY = REPO / "benchmarks" / "endpointing" / "summary.py"
+SUMMARY = REPO / "benchmarks" / "voice" / "endpointing_summary.py"
 
 
 def _summary() -> ModuleType:

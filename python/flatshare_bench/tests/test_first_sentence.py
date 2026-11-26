@@ -1,4 +1,4 @@
-"""The first-sentence measure (benchmarks/replies/first_sentence.py) against what it stands for, and its record: the
+"""The first-sentence measure (benchmarks/voice/first_sentence.py) against what it stands for, and its record: the
 script's prompt is the voice worker's instructions and its sentence rule the bench's (LiveKit Agents' default), and the
 README's table is what benchmarks/results/2026-10-27-first-sentence/replies.jsonl gives."""
 
@@ -15,7 +15,7 @@ from pathlib import Path
 from flatshare_bench import voice_turn
 
 REPO = Path(__file__).resolve().parents[3]
-SCRIPT = REPO / "benchmarks" / "replies" / "first_sentence.py"
+SCRIPT = REPO / "benchmarks" / "voice" / "first_sentence.py"
 RECORD = REPO / "benchmarks" / "results" / "2026-10-27-first-sentence"
 
 

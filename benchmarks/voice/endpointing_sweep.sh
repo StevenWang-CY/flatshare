@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sweep.sh NAME SILENCE/DELAY...: the endpointing sweep, from a workstation with SSH to the hosts, like
+# endpointing_sweep.sh NAME SILENCE/DELAY...: the endpointing sweep, from a workstation with SSH to the hosts, like
 # benchmarks/e2/campaign.sh. The end of a turn waits for Silero VAD to hear SILENCE seconds of silence (0.55 by
 # default) and then for LiveKit's endpointing DELAY (0.5 by default): most of the voice turn's floor on this box. For
 # each SILENCE/DELAY, on cyan, it sets the voice worker's FLATSHARE_VAD_MIN_SILENCE and FLATSHARE_ENDPOINTING_MIN_DELAY
@@ -12,10 +12,10 @@
 # it, and needs the worker in bench mode with fixed endpointing (the vad-turns variant, as E2 runs it) and the GPU
 # node serving. Into $FLATSHARE_SWEEPS/NAME (default ~/flatshare/runs/endpointing) it fetches each setting's record:
 # setting.json (the two values, the worker's start, the release), bots/ (turns.jsonl, summary.json) and
-# voice-worker.log (the worker's journal while the caller ran); benchmarks/endpointing/summary.py tables them.
+# voice-worker.log (the worker's journal while the caller ran); benchmarks/voice/endpointing_summary.py tables them.
 # FLATSHARE_SSH and FLATSHARE_CYAN (default cyan) as for campaign.sh.
 set -euo pipefail
-usage() { echo "usage: sweep.sh NAME SILENCE/DELAY..." >&2; exit 2; }
+usage() { echo "usage: endpointing_sweep.sh NAME SILENCE/DELAY..." >&2; exit 2; }
 (($# >= 2)) || usage
 name=$1
 shift

@@ -38,7 +38,7 @@ The endpointing column is the worker's own time from the end of speech to its en
 
 | | |
 |---|---|
-| The sweep | [`benchmarks/endpointing/sweep.sh`](../../endpointing/sweep.sh), four settings on 2026-10-28 from 13:29 to 14:04 UTC, with cyan and Phastform at v1.6-15-ga31eab2 (each `setting.json` names the release, a31eab26ca5d) |
+| The sweep | [`benchmarks/voice/endpointing_sweep.sh`](../../voice/endpointing_sweep.sh), four settings on 2026-10-28 from 13:29 to 14:04 UTC, with cyan and Phastform at v1.6-15-ga31eab2 (each `setting.json` names the release, a31eab26ca5d) |
 | Each setting | The voice worker restarted with `FLATSHARE_VAD_MIN_SILENCE` and `FLATSHARE_ENDPOINTING_MIN_DELAY` set, in bench mode with E2's fixed endpointing; one caller then played every line of the caller corpus once, in order: 40 lines after a warm-up turn, with no interruptions, voice alone on Phastform's serving profile |
 
 ## Files
@@ -50,7 +50,7 @@ The endpointing column is the worker's own time from the end of speech to its en
 | `silence-S-delay-D/voice-worker.log` | The worker's journal while the caller ran |
 | `sweep.log` | The sweep's own log |
 
-[`summary.py`](../../endpointing/summary.py) gives the table from these records (`cd python/flatshare_bench && uv run
-python ../../benchmarks/endpointing/summary.py ../../benchmarks/results/2026-10-28-endpointing`), and
+[`endpointing_summary.py`](../../voice/endpointing_summary.py) gives the table from these records (`cd python/flatshare_bench && uv run
+python ../../benchmarks/voice/endpointing_summary.py ../../benchmarks/results/2026-10-28-endpointing`), and
 `python/flatshare_bench/tests/test_endpointing_record.py` fails while this README's table is not what it gives. Home
 directories are written as `~`.

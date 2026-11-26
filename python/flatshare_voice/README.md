@@ -165,7 +165,7 @@ no clock offset enters.
 - **Warm-up turns.** `--warmup-turns N` opens each call with N turns, played but not measured, from a generator of their
   own, so that the measured turns are those of the same call without them.
 - **Lines in order.** `--in-order` plays the corpus's lines in order rather than drawing them, as the endpointing sweep
-  ([`sweep.sh`](../../benchmarks/endpointing/sweep.sh)) does.
+  ([`endpointing_sweep.sh`](../../benchmarks/voice/endpointing_sweep.sh)) does.
 - **Failed turns.** A turn fails when the agent does not answer within the 30 s reply timeout, or does not stop
   speaking. Its sample counts at the timeout, censored, so a reply that never came raises the percentiles instead of
   leaving them, and the turns after it are the same as in a call without it.

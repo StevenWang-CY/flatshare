@@ -10,7 +10,7 @@ from types import ModuleType
 
 REPO = Path(__file__).resolve().parents[3]
 RECORD = REPO / "benchmarks" / "results" / "2026-10-28-endpointing"
-SUMMARY = REPO / "benchmarks" / "endpointing" / "summary.py"
+SUMMARY = REPO / "benchmarks" / "voice" / "endpointing_summary.py"
 
 
 def _summary() -> ModuleType:

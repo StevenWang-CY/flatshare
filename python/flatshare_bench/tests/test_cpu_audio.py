@@ -10,7 +10,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 RECORD = REPO / "benchmarks" / "results" / "2026-10-27-cpu-audio"
-SCRIPT = REPO / "benchmarks" / "audio" / "cpu_audio.py"
+SCRIPT = REPO / "benchmarks" / "voice" / "cpu_audio.py"
 
 
 def _rows(name: str) -> list[dict]:

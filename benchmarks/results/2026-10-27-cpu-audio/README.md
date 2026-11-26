@@ -2,7 +2,7 @@
 
 The voice servers hold about 3.4 GiB of the RTX 5060 Ti's memory (STT 2.4 GiB, TTS 1.0 GiB; docs/ARCHITECTURE.md),
 which the KV pool could take, about 24,800 tokens more at the engine's 147,456 bytes a token, if the two servers ran on
-the CPU. [`benchmarks/audio/cpu_audio.py`](../../audio/cpu_audio.py) measured what that would cost the calls: the box's
+the CPU. [`benchmarks/voice/cpu_audio.py`](../../voice/cpu_audio.py) measured what that would cost the calls: the box's
 own TTS server and Whisper large-v3-turbo on the CPU, with 1, 2 and 4 requests at once.
 
 | Requests at once | TTS first audio, p50 / p95 | TTS real-time factor, p50 | STT, 8 threads: transcript p50 / p95 | STT, 4 threads: p50 / p95 |
@@ -41,7 +41,7 @@ the TTS stage takes 211–242 ms and the voice turn's whole budget over voice al
 The TTS server started on the CPU on a socket, as `cpu_audio.py`'s docstring says:
 
 ```sh
-python benchmarks/audio/cpu_audio.py tts --tts unix:PATH --sentences SENTENCES --out DIR --rounds 6
-python benchmarks/audio/cpu_audio.py stt --model MODEL_DIR --corpus ~/flatshare/data/callers \
+python benchmarks/voice/cpu_audio.py tts --tts unix:PATH --sentences SENTENCES --out DIR --rounds 6
+python benchmarks/voice/cpu_audio.py stt --model MODEL_DIR --corpus ~/flatshare/data/callers \
   --out DIR --threads 8 --clips 20
 ```

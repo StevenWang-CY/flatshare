@@ -1,9 +1,9 @@
-"""The endpointing sweep's table (sweep.sh) from its records: for each setting of Silero VAD's silence and LiveKit's
+"""The endpointing sweep's table (endpointing_sweep.sh) from its records: for each setting of Silero VAD's silence and LiveKit's
 endpointing delay, the measured turns and those that failed, the caller's voice-to-voice latency, the worker's
 endpointing delay (from the end of speech to the end-of-turn decision, its turn lines' ``end_of_turn_ms``), and the
 lines whose answer began before they had ended (the caller's ``spoke_during_turn``), named.
 
-    cd python/flatshare_bench && uv run python ../../benchmarks/endpointing/summary.py SWEEP_DIR
+    cd python/flatshare_bench && uv run python ../../benchmarks/voice/endpointing_summary.py SWEEP_DIR
 """
 
 from __future__ import annotations

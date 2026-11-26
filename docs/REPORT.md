@@ -1314,7 +1314,7 @@ records' READMEs the probes and checks around them, and [EXPERIMENTS.md](EXPERIM
 | The search for stalls (§4) | [`2026-11-05-liveness`](../benchmarks/results/2026-11-05-liveness) | its README |
 | The simulator's results (§6.5, §6.7), modeled | [Its tables in BENCHMARKS.md](BENCHMARKS.md#does-knowing-when-an-agent-returns-help) and [other hardware, modeled](../crates/flatshare-sim/README.md#other-hardware-modeled) | `make reproduce-e1`, `flatshare-sim hardware` |
 | Replies whose windows overlap (§6.6) | The test of overlapping replies in [`test_make_room.py`](../python/flatshare_vllm/tests/test_make_room.py) | `make test-make-room` |
-| The first sentences' tokens (§6.3) | [`2026-10-27-first-sentence`](../benchmarks/results/2026-10-27-first-sentence) | [`first_sentence.py`](../benchmarks/replies/first_sentence.py) |
+| The first sentences' tokens (§6.3) | [`2026-10-27-first-sentence`](../benchmarks/results/2026-10-27-first-sentence) | [`first_sentence.py`](../benchmarks/voice/first_sentence.py) |
 | §6.8, Figure 14 and Table 6 | [`2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds) | its `gate.py`, `make figures` |
 | §6.9, Figure 15 and Table 7 | [`2026-10-28-rounds`](../benchmarks/results/2026-10-28-rounds), and the screens in [`2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep) | `gate.py`'s sweep, the screens' `table.py`, `make figures` |
 | §6.10 and Table 8 | [`2026-11-01-engine-points`](../benchmarks/results/2026-11-01-engine-points) | its `table.py` |
@@ -1322,7 +1322,7 @@ records' READMEs the probes and checks around them, and [EXPERIMENTS.md](EXPERIM
 | §6.11, Figures 17 and 18 and Table 10 | [`2026-11-08-envelope`](../benchmarks/results/2026-11-08-envelope) | its `table.py`, `make figures` |
 | The failure drills (Appendix D, Figure D1) | [`2026-10-25-drills`](../benchmarks/results/2026-10-25-drills) and [`2026-10-28-node-failover`](../benchmarks/results/2026-10-28-node-failover) | their READMEs, `make figures` |
 | The 24-hour soak (§7, Appendix D, Figure D2) | [`2026-10-28-soak`](../benchmarks/results/2026-10-28-soak) | its `table.py`, `flatshare-bench soak report`, `make figures` |
-| The limits of §9 | [`2026-10-27-quality`](../benchmarks/results/2026-10-27-quality), [`2026-10-28-endpointing`](../benchmarks/results/2026-10-28-endpointing), [`2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep), [`2026-10-31-fp8-crash`](../benchmarks/results/2026-10-31-fp8-crash), [`2026-10-27-cpu-audio`](../benchmarks/results/2026-10-27-cpu-audio) and [`2026-11-02-port-v0.33.0`](../benchmarks/results/2026-11-02-port-v0.33.0) | their READMEs, [`gate.py`](../benchmarks/quality/gate.py) and [`summary.py`](../benchmarks/endpointing/summary.py) |
+| The limits of §9 | [`2026-10-27-quality`](../benchmarks/results/2026-10-27-quality), [`2026-10-28-endpointing`](../benchmarks/results/2026-10-28-endpointing), [`2026-10-27-sweep`](../benchmarks/results/2026-10-27-sweep), [`2026-10-31-fp8-crash`](../benchmarks/results/2026-10-31-fp8-crash), [`2026-10-27-cpu-audio`](../benchmarks/results/2026-10-27-cpu-audio) and [`2026-11-02-port-v0.33.0`](../benchmarks/results/2026-11-02-port-v0.33.0) | their READMEs, [`gate.py`](../benchmarks/quality/gate.py) and [`endpointing_summary.py`](../benchmarks/voice/endpointing_summary.py) |
 
 **Hosting.** The tag in the header holds the code, the records and this report. The raw records are release assets of
 [v1.0](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.0) (the main evaluation),
