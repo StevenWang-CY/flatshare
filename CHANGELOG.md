@@ -5,6 +5,31 @@ records, the demo video). The project was called Leaseholder through v1.1, and t
 keep that name. Numbers are each release's own, with the campaign that measured them: v1.0 re-measured v0.3's
 headline in rounds, and [BENCHMARKS.md](docs/BENCHMARKS.md) has every run.
 
+## [v1.28](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.28) (2026-11-25): every directory mapped, and what nothing read removed
+
+A housekeeping release: no record, no measurement and nothing the boxes serve changes. Each directory now says what it
+holds, two flat folders are sorted, and the files that no record, document or tool read are gone.
+
+- **Every directory opens on a map.** `benchmarks/`, `crates/`, `deploy/`, `ops/` and `python/` each gain a README, as
+  `docs/` had: `deploy/`'s gives each host directory its role and each tool on a host its job, and `benchmarks/`'s each
+  experiment's directory. The repository's README gains a Repository section that maps the seven places a reader
+  starts from.
+- **The records are indexed.** `benchmarks/results/README.md` lists the 35 records by kind with what each holds, and a
+  test fails when a record has no row. Three records that no document linked are reachable through it.
+- **Campaign files have a directory.** E2's 63 are in `benchmarks/e2/campaigns/` and the A100 run's in
+  `benchmarks/a100/campaigns/`, as the arm files are in `arms/`, whose README now says what each part of an arm file's
+  name means. A campaign still names its arm files relative to itself, so its lines read `../arms/NAME.toml`.
+- **The voice pipeline's measures share `benchmarks/voice/`**: `cpu_audio.py`, `first_sentence.py`,
+  `endpointing_sweep.sh` and `endpointing_summary.py`, from `benchmarks/audio`, `replies` and `endpointing`.
+- **Removed, each because nothing read it.** The A100 run's three optional arms that never ran (C' on Qwen3-14B, the
+  two vLLM branches, and preempt-resubmit), with the hardware profile `a100-40gb-qwen3-14b` and the voice worker's
+  `qwen3-14b` variant; `marlin-session1.sh`; the voice worker's metric list, which no rule or panel used; the A100
+  record's `figure.toml`, whose chart v1.26 retired; and a helper that only its own test called. C' stays as the
+  simulator forecast it.
+- **Upgrading from v1.27** needs no change on a host: the code that serves and the serving profile are v1.27's. A
+  command or a note that names a campaign by path takes `benchmarks/e2/campaigns/NAME.campaign`, and one that names
+  the endpointing sweep, the first-sentence measure or the CPU audio measure takes its path under `benchmarks/voice/`.
+
 ## [v1.27](https://github.com/StevenWang-CY/flatshare/releases/tag/v1.27) (2026-11-10): every figure redrawn in four colors, each with one meaning
 
 A figure release: no record, no measurement and nothing the boxes serve changes. Every figure, the README's animation

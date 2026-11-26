@@ -2,8 +2,8 @@
 
 **Chuyue Wang**
 
-Flatshare technical report, version 1.27, 10 November 2026. Code, records and figures at tag
-[v1.27](https://github.com/StevenWang-CY/flatshare/tree/v1.27) of
+Flatshare technical report, version 1.28, 25 November 2026. Code, records and figures at tag
+[v1.28](https://github.com/StevenWang-CY/flatshare/tree/v1.28) of
 [github.com/StevenWang-CY/flatshare](https://github.com/StevenWang-CY/flatshare); earlier versions in [Appendix
 E](#e-revision-history). The report is for engineers who serve a voice agent and background LLM work from one GPU, and
 argues for two rules in vLLM's scheduler from the measurements behind them.
