@@ -190,6 +190,20 @@ make-room runs the configuration to deploy here ([its switches](docs/PRODUCTION.
 `priority` with each request, 0 for voice and 2 for background work, and add the fixed KV pool and the CPU KV tier of
 [`engine.yaml`](deploy/phastform/engine.yaml).
 
+## Repository
+
+| Directory | What it holds |
+|---|---|
+| [`python/flatshare_vllm`](python/flatshare_vllm/README.md) | The change: the two pull requests as patches on vLLM 0.32 and 0.33, the build of the `make-room` scheduler, and the serving engine's additions |
+| [`crates/`](crates/README.md) | The gateway in front of the engines, the wire types, the cost models and the KV cache simulator |
+| [`python/`](python/README.md) | Beside the change: the voice worker, the measurement tools and the statistics |
+| [`deploy/`](deploy/README.md) | What each host runs: units, configurations, hardware profiles, the release tool and a container |
+| [`ops/`](ops/README.md) | The runbook, the failure drills, the alert rules and a dashboard |
+| [`benchmarks/`](benchmarks/README.md) | Each experiment's definition, and the committed records behind every number |
+| [`docs/`](docs/README.md) | The report, the architecture, the deployment guide and the decisions |
+
+[ARCHITECTURE.md](docs/ARCHITECTURE.md#at-a-glance) maps these to the system's three planes.
+
 ## Documentation
 
 [docs/README.md](docs/README.md) maps every document to the question it answers. The most used:

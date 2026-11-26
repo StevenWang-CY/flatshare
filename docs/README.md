@@ -21,6 +21,9 @@ The [repository's README](../README.md) gives the result on one page.
 - [SLO.md](SLO.md): Which service classes share the GPU, and what is each one's objective?
 - [PROTOCOL.md](PROTOCOL.md): What does the gateway accept from callers, and what does it send to the engine?
 - [ops/RUNBOOK.md](../ops/RUNBOOK.md): How are the hosts deployed, checked, operated and recovered?
+- [deploy/README.md](../deploy/README.md): Which directory holds what each host runs, and what does each tool on
+  a host do?
+- [ops/README.md](../ops/README.md): Where are the drills, the alert rules and the dashboard?
 - [deploy/container](../deploy/container/README.md): How does the engine run from vLLM's own container image?
 
 ## The evidence
@@ -33,6 +36,7 @@ The [repository's README](../README.md) gives the result on one page.
   the most background work at the same service to the calls?
 - [benchmarks/fp8](../benchmarks/fp8/README.md): What crashed the engine with an FP8 KV cache beside the CPU tier?
 - [benchmarks/results](../benchmarks/results): Which committed record holds each number?
+- [benchmarks/README.md](../benchmarks/README.md): Which directory defines each experiment?
 - [REVISIONS.md](REVISIONS.md): Which commit holds each revision the records name?
 
 ## Decisions
@@ -53,6 +57,8 @@ The [repository's README](../README.md) gives the result on one page.
 
 ## Components
 
+- [crates/README.md](../crates/README.md) and [python/README.md](../python/README.md): Which crates and packages
+  are there, and what does each depend on?
 - [crates/flatshare-gateway](../crates/flatshare-gateway/README.md): What does the gateway do, and how is it
   configured?
 - [crates/flatshare-core](../crates/flatshare-core/README.md): What do the cost, step and KV models and the admission
