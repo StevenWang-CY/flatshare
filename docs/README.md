@@ -35,7 +35,7 @@ The [repository's README](../README.md) gives the result on one page.
 - [benchmarks/quality/RESOURCE-GATE.md](../benchmarks/quality/RESOURCE-GATE.md): Which arrangement of two cards does
   the most background work at the same service to the calls?
 - [benchmarks/fp8](../benchmarks/fp8/README.md): What crashed the engine with an FP8 KV cache beside the CPU tier?
-- [benchmarks/results](../benchmarks/results): Which committed record holds each number?
+- [benchmarks/results](../benchmarks/results/README.md): Which committed record holds what, by kind?
 - [benchmarks/README.md](../benchmarks/README.md): Which directory defines each experiment?
 - [REVISIONS.md](REVISIONS.md): Which commit holds each revision the records name?
 
