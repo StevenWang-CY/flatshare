@@ -2260,6 +2260,9 @@ max_calls = 0
         let mut checked = 0;
         for entry in std::fs::read_dir(&arms).unwrap() {
             let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+                continue; // the folder's README
+            }
             let arm: toml::Table = std::fs::read_to_string(&path).unwrap().parse().unwrap();
             let Some(toml::Value::Table(overlay)) = arm.get("gateway") else {
                 continue;
