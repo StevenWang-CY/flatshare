@@ -907,11 +907,9 @@ def deadline_of(until: str) -> int:
     return deadline if deadline > now else deadline + 86400
 
 
-def test_the_run_hands_its_one_deadline_to_every_campaign_and_to_cprime(
-    tmp_path: Path, runtime: Path
-) -> None:
+def test_the_run_hands_its_one_deadline_to_every_campaign(tmp_path: Path, runtime: Path) -> None:
     # One deadline, as an epoch, from run.sh: a campaign takes it as it is (one that ends after HH:MM hands the next
-    # no deadline 24 hours away), and so does cprime.sh, whose stop before the deadline leaves its block undone.
+    # no deadline 24 hours away).
     hosts = tmp_path / "hosts"
     home = a100_host(hosts)
     env = dry_env(home, hosts, runtime)
@@ -926,32 +924,6 @@ def test_the_run_hands_its_one_deadline_to_every_campaign_and_to_cprime(
     assert done.returncode == 0, done.stdout + done.stderr
     log = (home / "flatshare" / "results" / "e2" / "a100-r1" / "campaign.log").read_text()
     assert f"until {until} UTC (epoch {deadline_of(until)})" in log
-    # cprime.sh, beside a copy of run.sh: what it is handed, and what its exit status makes of the block.
-    tree = tmp_path / "tree" / "benchmarks" / "a100"
-    tree.mkdir(parents=True)
-    shutil.copy(RUN, tree / "run.sh")
-    (tree / "cprime.sh").write_text(
-        'echo "cprime.sh $*" >>"$HOME/cprime.log"\nexit "${FAKE_CPRIME_STATUS:-0}"\n'
-    )
-    blocks = home / "flatshare" / "runs" / "a100" / "blocks"
-    for status, code in (("3", 0), ("1", 1), ("0", 0)):
-        done = subprocess.run(
-            ["bash", str(tree / "run.sh"), "--until", until, "cprime"],
-            env=env | {"FAKE_CPRIME_STATUS": status},
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        assert done.returncode == code, (status, done.stdout + done.stderr)
-        assert (blocks / "cprime.done").exists() == (status == "0"), status
-    assert (
-        lines(home / "cprime.log")
-        == [f"cprime.sh --cap 1536 --until-epoch {deadline_of(until)}"] * 3
-    )
-    assert (
-        "cprime stopped before its deadline"
-        in (home / "flatshare" / "runs" / "a100" / "blocks.log").read_text()
-    )
 
 
 def test_an_estimate_given_for_a_block_starts_it_where_the_pages_would_miss_the_deadline(

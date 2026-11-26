@@ -433,10 +433,10 @@ def test_warm_starts_each_configuration_and_keeps_what_its_start_showed(
     record["configurations"]["2048-0"]["ok"] = True
     (home / "flatshare" / "cache" / "warm.json").write_text(json.dumps(record))
     assert host_py.main(["warmed", str(out)]) == 0
-    # A file of configurations, one a line.
+    # A file of configurations, one a line (bootstrap.sh's FLATSHARE_WARM).
     configs = tmp_path / "warm.conf"
-    configs.write_text("# C'\n14b qwen3-14b --max-num-seqs 64\n")
-    assert host_py.configurations(configs) == [("14b", "qwen3-14b", ("--max-num-seqs", "64"))]
+    configs.write_text("# one start\nkv make-room --max-num-seqs 64\n")
+    assert host_py.configurations(configs) == [("kv", "make-room", ("--max-num-seqs", "64"))]
 
 
 def write_data(data: Path) -> None:

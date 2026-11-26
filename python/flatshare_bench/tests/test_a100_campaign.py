@@ -1,6 +1,6 @@
 """The A100 run's campaign files (benchmarks/a100): the core's five rounds and the optional arms' campaigns name arm
 files that load, with the seeds and the order run.sh's core gives; probe_results.py reads what probe.py and tail.py
-print and picks C''s stock arm by P-1's rule; and the run scripts parse."""
+print and picks the best stock step cap by P-1's rule; and the run scripts parse."""
 
 from __future__ import annotations
 
@@ -107,8 +107,7 @@ def test_a_prime_is_the_cores_arms_at_32_sessions() -> None:
             b.arm,
         )
     seeds = [campaign(CAMPAIGNS / f"a100-aprime-r{n}.campaign")[0] for n in (1, 2)]
-    resubmit = [campaign(CAMPAIGNS / f"a100-resubmit-r{n}.campaign")[0] for n in (3, 4, 5)]
-    assert seeds == [11, 12] and resubmit == [13, 14, 15]
+    assert seeds == [11, 12]
     # Each round pairs the two engines on its sample; voice alone, the SLO's reference, is the core's five points on
     # the same host, which flatshare-bench e2 report reads for every point of that hardware.
     for n in (1, 2):
@@ -202,7 +201,9 @@ def test_the_probes_outputs_read_back() -> None:
         results.parse_tail("tail: nothing measured\n")
 
 
-def test_c_primes_stock_arm_is_the_lowest_median_first_token_p95(tmp_path: Path, capsys) -> None:
+def test_the_best_stock_step_cap_is_the_lowest_median_first_token_p95(
+    tmp_path: Path, capsys
+) -> None:
     write_runs(
         tmp_path,
         {

@@ -3,12 +3,11 @@
 # made: its campaigns' results (campaign.sh --local's ~/flatshare/results), its other runs (~/flatshare/runs: the
 # probes, E0's tiers, the calibration, and runs/journal/units.log, into which each round first exports what the units
 # logged since the last, from the host's journal or flatshare-svc's, which would leave with the host), its node
-# directories (node and node-14b: the host's facts, the rendered configs, the preflight) and the warm starts' and JIT
-# check's records (cache/warm.json, jit-check.json), into DIR (default ~/flatshare/hosts/HOST), every 120 s until
-# stopped, or once. Each copy is rsync's: only what changed moves, nothing is deleted on either side, and AIPerf's
-# copies of the dataset (aiperf/inputs.json) stay on the host. A copy that fails is logged and tried again at the next
-# round, so a dropped link loses nothing. FLATSHARE_SSH is your ssh command for the host, as for
-# benchmarks/e2/campaign.sh.
+# directory (node: the host's facts, the rendered configs, the preflight) and the warm starts' and JIT check's records
+# (cache/warm.json, jit-check.json), into DIR (default ~/flatshare/hosts/HOST), every 120 s until stopped, or once.
+# Each copy is rsync's: only what changed moves, nothing is deleted on either side, and AIPerf's copies of the dataset
+# (aiperf/inputs.json) stay on the host. A copy that fails is logged and tried again at the next round, so a dropped
+# link loses nothing. FLATSHARE_SSH is your ssh command for the host, as for benchmarks/e2/campaign.sh.
 set -uo pipefail
 usage() { echo "usage: pull.sh [--once] [--every SECONDS] HOST [DIR]" >&2; exit 2; }
 once=false every=120
@@ -38,7 +37,7 @@ journal='mkdir -p flatshare/runs/journal && cd flatshare/runs/journal &&
 pull() { # pull: one round; the status of the last copy that failed
   local status=0 what
   $ssh "$host" "$journal" || log "pull: the units' logs from $host were not exported; next round"
-  for what in results runs node node-14b; do
+  for what in results runs node; do
     if $ssh "$host" "test -d flatshare/$what"; then
       rsync -a -e "$ssh" --exclude aiperf/inputs.json "$host:flatshare/$what/" "$dir/$what/" ||
         { status=$?; log "pull: $what from $host failed (rsync exit $status); next round"; }

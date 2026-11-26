@@ -4,10 +4,11 @@
     python3 probe_results.py pick-stock [RUNS] [--cap TOKENS]
 
 RUNS is the probe blocks' directory (default ~/flatshare/runs/a100: block1, block2, block3 with one NAME.txt a run).
-`pick-stock` picks C''s stock arm by P-1's rule (run.sh, the optional arms): of the stock step-cap settings blocks 1 and
-2 ran, 512/256 (frozen), 2,048/0 and the time-equivalent cap, the one whose tail runs gave the calls the lowest
-first-token p95, the median of its runs; it prints the setting's name and its engine flags on one line, and the table on
-stderr. A percentile set by a turn that failed (printed with ≥) counts at its value, as E2's report censors one.
+`pick-stock` picks the A100's best stock step cap by P-1's rule (tuned vLLM's, run.sh, the optional arms): of the stock
+step-cap settings blocks 1 and 2 ran, 512/256 (frozen), 2,048/0 and the time-equivalent cap, the one whose tail runs
+gave the calls the lowest first-token p95, the median of its runs; it prints the setting's name and its engine flags on
+one line, and the table on stderr. A percentile set by a turn that failed (printed with ≥) counts at its value, as
+E2's report censors one.
 
 Standard library only.
 """
@@ -223,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     default = Path.home() / "flatshare" / "runs" / "a100"
     p = commands.add_parser("table", help="every probe run as a Markdown table")
     p.add_argument("runs", type=Path, nargs="?", default=default)
-    p = commands.add_parser("pick-stock", help="C''s stock arm by P-1's rule")
+    p = commands.add_parser("pick-stock", help="the best stock step cap by P-1's rule")
     p.add_argument("runs", type=Path, nargs="?", default=default)
     p.add_argument(
         "--cap", type=int, default=1536, help="block 2's time-equivalent cap (default %(default)s)"

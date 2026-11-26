@@ -314,7 +314,6 @@ restart:
 | `no-preemptive-generation` | `FLATSHARE_PREEMPTIVE_GENERATION=false` | E2's factor |
 | `no-events` | `FLATSHARE_EVENTS=off` | Arm 9's ablation |
 | `node-binding` | `FLATSHARE_NODE_BINDING=on`: bench mode's calls are placed too | Points and drills on two GPU nodes |
-| `qwen3-14b` | `FLATSHARE_LLM_MODEL` names Qwen3-14B-FP8 | The A100 kit's arm C' (`benchmarks/a100/cprime.sh`) |
 
 A drop-in with `Environment=FLATSHARE_LLM_UDS=%t/flatshare/phastform-engine.sock` sends the LLM straight to the engine.
 The worker's journal counts each session's lifecycle events (`journalctl --user -u flatshare-voice-worker | grep

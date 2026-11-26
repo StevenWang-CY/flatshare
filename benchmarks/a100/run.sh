@@ -12,17 +12,15 @@
 #   5     the calibration point (calibration.sh, 16 sessions)
 #   6-9   E2 rounds 2 to 5
 #   10    the GPU units stopped; the records stay for deploy/a100/pull.sh
-# The optional arms, by name, in its order: cprime (cprime.sh), branches (branches.sh run, once branches.sh stage has
-# built the two envs), resubmit (the stock engine behind the gateway's preempt-resubmit, seeds 13 to 15), batch
-# (batch.sh), aprime (the box's pool at 32 sessions, two rounds), tuned (the stock engine at the A100's best step cap in
-# the probes, 2,048/0, on the samples of the core's rounds 1 and 2), prtuned (the PRs' values at that cap, on the same
-# samples, paired with tuned) and backend (probes.sh backend: the KV case on FlashInfer's attention against block 1's on
-# FlashAttention 2).
+# The optional arms, by name, in its order: batch (batch.sh), aprime (the box's pool at 32 sessions, two rounds), tuned
+# (the stock engine at the A100's best step cap in the probes, 2,048/0, on the samples of the core's rounds 1 and 2),
+# prtuned (the PRs' values at that cap, on the same samples, paired with tuned) and backend (probes.sh backend: the KV
+# case on FlashInfer's attention against block 1's on FlashAttention 2).
 # --until HH:MM (UTC; tomorrow's when today's has passed) starts no block that the page's estimate says cannot end
-# before then, and hands the deadline, once computed, as an epoch, to each campaign and to cprime.sh, which then start
-# no point that cannot. --estimate BLOCK=MINUTES puts another estimate in the page's place for BLOCK (a block or an
-# arm's name): a host measured faster or slower, or an E2 block run for its first point alone, which campaign.sh's own
-# budget then stops at the deadline (the single-host rehearsal's). Each block's start and end go to
+# before then, and hands the deadline, once computed, as an epoch, to each campaign, which then starts no point that
+# cannot. --estimate BLOCK=MINUTES puts another estimate in the page's place for BLOCK (a block or an arm's name): a
+# host measured faster or slower, or an E2 block run for its first point alone, which campaign.sh's own budget then
+# stops at the deadline (the single-host rehearsal's). Each block's start and end go to
 # ~/flatshare/runs/a100/blocks.log; a block done leaves blocks/BLOCK.done.
 set -euo pipefail
 usage() { echo "usage: run.sh [--until HH:MM] [--cap TOKENS] [--estimate BLOCK=MINUTES]... [BLOCK...]" >&2; exit 2; }
@@ -38,7 +36,7 @@ while [[ ${1:-} == --* ]]; do
       cap=$2
       ;;
     --estimate)
-      [[ ${2:-} =~ ^(10|[0-9]|cprime|branches|resubmit|batch|aprime|tuned|prtuned|backend)=[1-9][0-9]*$ ]] || usage
+      [[ ${2:-} =~ ^(10|[0-9]|batch|aprime|tuned|prtuned|backend)=[1-9][0-9]*$ ]] || usage
       estimates+=" $2"
       ;;
     *) usage ;;
@@ -74,8 +72,7 @@ minutes() {
   fi
   case $1 in
     0) echo 44 ;; 1) echo 25 ;; 2) echo 26 ;; 3) echo 17 ;; 4) echo 29 ;; 5) echo 17 ;; 6 | 7 | 8 | 9) echo 28 ;;
-    10) echo 10 ;; cprime) echo 95 ;; branches) echo 45 ;; resubmit) echo 36 ;; batch) echo 15 ;; aprime) echo 56 ;;
-    tuned) echo 28 ;; prtuned) echo 24 ;; backend) echo 12 ;;
+    10) echo 10 ;; batch) echo 15 ;; aprime) echo 56 ;; tuned) echo 28 ;; prtuned) echo 24 ;; backend) echo 12 ;;
     *) echo 0 ;;
   esac
 }
@@ -152,18 +149,7 @@ block() { # block NAME: run one block unless it is done
     5) bash "$here/calibration.sh" --sessions 16 ;;
     6 | 7 | 8 | 9) campaign "$here/campaigns/a100-r$((name - 4)).campaign" ;;
     10) systemctl --user stop flatshare.target flatshare-engine flatshare-stt flatshare-tts ;;
-    cprime) # its rounds take the run's deadline; it exits 3 where that stopped it with points left
-      local status=0
-      bash "$here/cprime.sh" --cap "$cap" ${deadline:+--until-epoch "$deadline"} || status=$?
-      if ((status == 3)) && [[ -n $deadline ]]; then
-        log "cprime stopped before its deadline ($until UTC) with points left"
-        exit 0
-      fi
-      ((status == 0)) || { log "cprime did not complete (cprime.sh exit status $status)"; exit 1; }
-      ;;
-    branches) bash "$here/branches.sh" run ;;
     batch) bash "$here/batch.sh" ;;
-    resubmit) for n in 3 4 5; do campaign "$here/campaigns/a100-resubmit-r$n.campaign"; done ;;
     aprime) for n in 1 2; do campaign "$here/campaigns/a100-aprime-r$n.campaign"; done ;;
     tuned) for n in 1 2; do campaign "$here/campaigns/a100-tuned-r$n.campaign"; done ;;
     prtuned) for n in 1 2; do campaign "$here/campaigns/a100-prtuned-r$n.campaign"; done ;;

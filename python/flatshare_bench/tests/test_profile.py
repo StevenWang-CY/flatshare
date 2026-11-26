@@ -7,7 +7,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -397,55 +396,29 @@ def test_the_gpu_units_name_the_drivers_libraries_where_the_linker_does_not_find
             assert library_path(lines) == [], (name, unit)
 
 
-def test_the_second_models_profile_renders_the_cores_node_with_its_own_model_and_pool(
-    tmp_path: Path,
-) -> None:
-    host = {
-        "hostname": "a100-vm",
-        "gpu": {
-            "name": "NVIDIA A100-SXM4-40GB",
-            "memory_mib": 40960,
-            "compute_cap": "8.0",
-            "driver": "580.65.06",
-        },
-        "cpus": {"0": list(range(32))},
-        "memory": {"total_bytes": 200 << 30, "available_bytes": 190 << 30, "nodes": {}},
-        "shm": {"path": "/dev/shm", "total_bytes": 100 << 30, "free_bytes": 100 << 30},
+def test_a_profile_with_a_base_takes_the_bases_values_under_its_own(tmp_path: Path) -> None:
+    # Another model on the A100: its own model and directory, every other value the base's, as profile.py loads it
+    # and as the harness's engine check reads it.
+    profiles = tmp_path / "profiles"
+    profiles.mkdir()
+    shutil.copy(DEPLOY / "profiles" / "a100-40gb.toml", profiles)
+    (profiles / "second.toml").write_text(
+        '[profile]\nbase = "a100-40gb"\nname = "second"\ndeploy_dir = "%h/flatshare/node-second"\n\n'
+        '[model]\nname = "Qwen/Qwen3-8B-FP8"\nrevision = "abc"\n'
+    )
+    core, second = profile.load("a100-40gb"), profile.load(str(profiles / "second.toml"))
+    assert second["model"] == core["model"] | {"name": "Qwen/Qwen3-8B-FP8", "revision": "abc"}
+    assert second["profile"] == core["profile"] | {
+        "name": "second",
+        "deploy_dir": "%h/flatshare/node-second",
     }
-    core = profile.render(profile.load("a100-40gb"), host, tmp_path / "node")
-    second = profile.render(profile.load("a100-40gb-qwen3-14b"), host, tmp_path / "node-14b")
-    engine = (tmp_path / "node-14b" / "engine.yaml").read_text()
-    assert "\nmodel: Qwen/Qwen3-14B-FP8\n" in engine
-    assert "\nrevision: 9a283b4a5efbc09ce247e0ae5b02b744739e525a\n" in engine
-    assert '\ndefault-chat-template-kwargs: {"enable_thinking": false}\n' in engine
-    # 7,334 blocks of 16 tokens of the 14B's 160 KiB a token; the CPU tier four times it, as /dev/shm and RAM allow.
-    assert "kv-cache-memory: 19225640960\n" in engine and 19225640960 == 7334 * 16 * 160 * 1024
-    assert second["values"]["engine.cpu_bytes_to_use"] == str(71 << 30)
-    # Everything else is the core's: its STT, its plan and its units, in their own directory.
-    assert (tmp_path / "node-14b" / "stt.yaml").read_text() == (
-        tmp_path / "node" / "stt.yaml"
-    ).read_text()
-    assert second["plan"] == core["plan"]
-    # The 14B's engine outgrows its budget, so it starts after the audio servers (R2); the core's starts beside them.
-    order = "\nAfter=flatshare-stt.service flatshare-tts.service\n"
-    its_order = re.compile(
-        r"# On this node the engine starts after the audio servers.*?" + order, re.S
-    )
-    assert order in (tmp_path / "node-14b" / "systemd" / "flatshare-engine.service").read_text()
-    assert (
-        "After=flatshare-stt"
-        not in (tmp_path / "node" / "systemd" / "flatshare-engine.service").read_text()
-    )
-    for unit in ("flatshare-engine.service", "flatshare-stt.service", "flatshare-tts.service"):
-        ours = (tmp_path / "node-14b" / "systemd" / unit).read_text()
-        theirs = (tmp_path / "node" / "systemd" / unit).read_text()
-        ours = ours.replace("flatshare/node-14b/", "flatshare/node/")
-        ours = its_order.sub("", ours)
-        assert ours.replace("Qwen3-14B-FP8", "Qwen3-4B-Instruct-2507-FP8") == theirs, unit
-    # The harness's engine check reads the same profile, its base's values under its own.
-    flags = dict(zip(*[iter(profile_flags("a100-40gb-qwen3-14b"))] * 2, strict=True))
-    assert flags["--model"] == "Qwen/Qwen3-14B-FP8" and flags["--max-num-batched-tokens"] == "512"
-    assert flags["--revision"] == second["values"]["model.revision"]
+    rest = {"profile", "model"}
+    assert {k: v for k, v in second.items() if k not in rest} == {
+        k: v for k, v in core.items() if k not in rest
+    }
+    flags = dict(zip(*[iter(profile_flags("second", profiles))] * 2, strict=True))
+    assert flags["--model"] == "Qwen/Qwen3-8B-FP8" and flags["--revision"] == "abc"
+    assert flags["--max-num-batched-tokens"] == "512"
 
 
 def test_the_cpu_tier_shrinks_to_what_the_host_holds_and_is_refused_below_the_pool(

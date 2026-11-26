@@ -135,8 +135,8 @@ serving profile's `serving.json` ([the serving profile](../deploy/phastform/vari
   `make profiles UPDATE=1` writes both.
 - **The A100's profile** (`a100-40gb`) keeps the box's model, pool, step cap and CPU tier ratio, and derives the rest
   from the host.
-- **A profile with a base** takes the base's values under its own, key by key. `a100-40gb-qwen3-14b`, the optional arm
-  C', changes the A100 profile's model, pool and directory.
+- **A profile with a base** takes the base's values under its own, key by key. `rtx-5060-ti-serve`, the serving
+  profile, takes every value of the box's and adds its serving configuration.
 
 ## The rules
 
@@ -150,8 +150,8 @@ The profile's "auto" values, in `deploy/profile.py`:
   `profile.py` refuses a profile whose two budgets and the TTS's 1.08 GiB take more than 0.95 of the card. With both
   vLLM pools fixed, the three servers start at once, and each one's memory check passes in any order while the budgets
   fit the card together. On the box they take 0.92 of it, and the worst cases leave 12,250 MiB free against the
-  engine's 11,096 and 4,360 against the STT's 2,378 [measured]. C''s 14B engine outgrows its budget [modeled], so its
-  node starts the engine last (`engine_order`).
+  engine's 11,096 and 4,360 against the STT's 2,378 [measured]. A profile whose engine outgrows its budget starts it
+  after the audio servers instead (`engine_order`).
 - **R3, the CPU tier.** The box's ratio, four times the pool, bounded by what `/dev/shm` holds less 2 GiB and by the
   RAM a single host leaves after 25 GiB for its other processes [estimate], in whole GiB. A tier no larger than the pool
   only mirrors it, so R3 refuses one.

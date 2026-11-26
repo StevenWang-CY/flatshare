@@ -38,7 +38,7 @@
 # agents:SESSIONS), and a kind measured here is budgeted by its longest. --until-epoch SECONDS does the same at an
 # absolute time, which has no tomorrow: benchmarks/a100/run.sh hands its one deadline to every campaign of a run so.
 # --points prints the points CAMPAIGN lists, one a line, as this script reads the file, and reaches no host:
-# benchmarks/a100/run.sh and cprime.sh take a campaign's points from it.
+# benchmarks/a100/run.sh takes a campaign's points from it.
 set -euo pipefail
 usage() {
   echo "usage: campaign.sh [--dry-run] [--pause] [--local] [--until HH:MM | --until-epoch SECONDS] CAMPAIGN" >&2

@@ -15,7 +15,7 @@
 # FLATSHARE_GPU_ID names the GPU the host lends, by nvidia-smi's index or its UUID, on a host with several (the
 # preflight refuses several and none named): detect resolves it to its UUID, which the GPU units run on alone and env.sh
 # keeps; FLATSHARE_ALLOW_MIG=1 measures on a MIG slice, which the preflight otherwise refuses, and env.sh keeps it too.
-# FLATSHARE_PROFILE names another profile; FLATSHARE_MODELS adds MODEL@REVISION words to download (the 14B, for C');
+# FLATSHARE_PROFILE names another profile; FLATSHARE_MODELS adds MODEL@REVISION words to download;
 # FLATSHARE_WARM is a file of the configurations to warm (host.py warm --configs). The first stage chooses what runs the
 # units, the user manager where it outlives the session (lingering, which it enables where a user may) or else
 # deploy/bin/flatshare-svc, and env.sh keeps the choice for the later stages and every script that sources it.

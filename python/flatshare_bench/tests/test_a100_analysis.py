@@ -160,15 +160,13 @@ def test_a_report_says_what_its_records_lack(tmp_path: Path) -> None:
 
 
 def test_the_core_section_reads_the_core_rounds_alone(tmp_path: Path) -> None:
-    # §4 is the core's E2 within the A100: its rounds a100-r1 to -r5 (and tuned vLLM's), not the other optional arms'
-    # campaigns, whose names also begin a100-r (a100-resubmit-r3 to -r5); A' (a100-aprime-*) has its own section, and
-    # a point not complete (one in progress, or stopped) is read nowhere.
+    # §4 is the core's E2 within the A100: its rounds a100-r1 to -r5 (and tuned vLLM's); A' (a100-aprime-*) has its
+    # own section, and a point not complete (one in progress, or stopped) is read nowhere.
     host = tmp_path / "host"
     probe_runs(host / "runs" / "a100")
     for campaign, label, share in (
         ("a100-r1", "frozen", 0.12),
         ("a100-r2", "frozen", 0.14),
-        ("a100-resubmit-r3", "stock, preempt-resubmit", 0.50),
         ("a100-aprime-r1", "the box's pool", 0.18),
         ("a100-r3", "in progress", 0.30),
     ):
@@ -194,7 +192,7 @@ def test_the_core_section_reads_the_core_rounds_alone(tmp_path: Path) -> None:
     ).read_text()
     section = text.split("## 4. E2 within the A100", 1)[1].split("## 5.", 1)[0]
     assert "- frozen: 12%, 14%" in section
-    assert "preempt-resubmit" not in section and "the box's pool" not in section
+    assert "the box's pool" not in section
     assert "in progress" not in text
     aprime = text.split("## 5. A'", 1)[1].split("## 6.", 1)[0]
     assert (

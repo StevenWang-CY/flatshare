@@ -698,8 +698,7 @@ def report(host: Path, corpus: Path, binary: Path, out: Path, flatshare_bench: P
         lines.append("Not measured: no probe block (runs/a100/block1-3).")
     lines += ["", "## 4. E2 within the A100", ""]
     # The core's rounds (a100-r1 to -r5), and tuned vLLM's and the PRs' values at its step cap (a100-tuned-r1, -r2,
-    # a100-prtuned-r1, -r2), which replay the samples of the core's rounds 1 and 2; the other optional arms' campaigns
-    # begin a100-r too (a100-resubmit-r3 ...), and A' has its own.
+    # a100-prtuned-r1, -r2), which replay the samples of the core's rounds 1 and 2; A' has its own.
     core_points = complete_points(host, "a100-r[0-9]*")
     points = (
         core_points
