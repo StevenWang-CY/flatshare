@@ -188,11 +188,6 @@ def _fence(values: Sequence[float]) -> float | None:
     return fence if max(values) > fence else None
 
 
-def load_sweep(configurations: Sequence[Mapping[str, Any]]) -> bool:
-    """Whether configurations span load levels (numbers of session trees)."""
-    return len({c["runs"][0]["sessions"] for c in configurations}) > 1
-
-
 def _seconds(ms: float) -> str:
     return f"{ms / 1000:.2f}"
 

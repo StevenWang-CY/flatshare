@@ -50,7 +50,6 @@ the box, and [the report](../../../docs/REPORT.md#67-the-rules-carry-to-an-a100)
 | `e2/` | Every complete E2 point as `flatshare-bench e2 export` keeps it, by campaign (`a100-r1` to `-r5`: the core; `a100-tuned-r1`, `-r2`; `a100-prtuned-r1`, `-r2`; `a100-aprime-r1`), with each campaign's log and frontier, and `durations.tsv`, each point's and engine switch's measured seconds |
 | `report/` | `make reproduce-e2-a100`: `flatshare-bench e2 report` over the core, tuned vLLM and the PRs' values at its cap |
 | `a100.md`, `steps.json` | `make reproduce-a100` over the raw records |
-| `figure.toml` | The rows of the README's chart of both GPUs (`make e2-gpus-figure`) |
 
 `make reproduce-a100 RECORDS=<these records, raw> CORPUS=<weka-x32>` writes [`a100.md`](a100.md) from the v1.1
 release's raw-records asset (`leaseholder-raw-records-a100.tar.gz`, every file the host wrote but the units' journal),

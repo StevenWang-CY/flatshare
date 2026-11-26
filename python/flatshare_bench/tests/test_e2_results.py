@@ -28,7 +28,6 @@ from flatshare_bench.cli import main
 from flatshare_bench.e2.arm import Agents, Voice, flag_values
 from flatshare_bench.e2.cyan import SECRETS
 from flatshare_bench.e2.engine import SCHEDULER, variant_flags
-from flatshare_bench.e2.figures import load_sweep
 from flatshare_bench.e2.record import (
     DISCARDED,
     OUTCOMES,
@@ -1043,13 +1042,6 @@ def test_the_report_names_the_prs_by_their_numbers(tmp_path: Path) -> None:
     table = write_report(rows, tmp_path / "report")[1].read_text()
     assert "PR A" not in table and "| disc-pr-a-s24: vLLM #63350: make-room's" in table
     assert json.loads((dirs[0] / "run.json").read_text())["arm"]["label"] == labels["disc-pr-a-s24"]
-
-
-def test_a_line_joins_an_arms_frontier_only_across_load_levels() -> None:
-    def at(*sessions: int) -> list[dict[str, Any]]:
-        return [{"runs": [{"sessions": n}]} for n in sessions]
-
-    assert load_sweep(at(8, 16, 24)) and not load_sweep(at(24, 24)) and not load_sweep(at(24))
 
 
 def turn_lines(run_dir: Path, stages: dict[str, float], turns: int, v2v: list[dict]) -> None:

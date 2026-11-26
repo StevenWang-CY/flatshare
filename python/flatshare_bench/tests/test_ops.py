@@ -1,8 +1,7 @@
 """ops/'s dashboards, alert and recording rules, their promtool tests and scrape configuration: every metric an
 expression or a test's input names is one the code exports, from the gateway's checked-in expositions
-(crates/flatshare-gateway/metrics.txt, and metrics-nodes.txt for [[nodes]]) and the metric sets of vLLM 0.32.0 and the
-voice worker (ops/metrics), and the
-rules and scrape jobs are what the docs say. make check-rules runs the promtool tests themselves."""
+(crates/flatshare-gateway/metrics.txt, and metrics-nodes.txt for [[nodes]]) and vLLM 0.32.0's metric set
+(ops/metrics), and the rules and scrape jobs are what the docs say. make check-rules runs the promtool tests themselves."""
 
 from __future__ import annotations
 
