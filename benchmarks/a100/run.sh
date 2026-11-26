@@ -148,9 +148,9 @@ block() { # block NAME: run one block unless it is done
       ;;
     1 | 3) bash "$here/probes.sh" "$name" ;;
     2) bash "$here/probes.sh" 2 --cap "$cap" ;;
-    4) campaign "$here/a100-r1.campaign" ;;
+    4) campaign "$here/campaigns/a100-r1.campaign" ;;
     5) bash "$here/calibration.sh" --sessions 16 ;;
-    6 | 7 | 8 | 9) campaign "$here/a100-r$((name - 4)).campaign" ;;
+    6 | 7 | 8 | 9) campaign "$here/campaigns/a100-r$((name - 4)).campaign" ;;
     10) systemctl --user stop flatshare.target flatshare-engine flatshare-stt flatshare-tts ;;
     cprime) # its rounds take the run's deadline; it exits 3 where that stopped it with points left
       local status=0
@@ -163,10 +163,10 @@ block() { # block NAME: run one block unless it is done
       ;;
     branches) bash "$here/branches.sh" run ;;
     batch) bash "$here/batch.sh" ;;
-    resubmit) for n in 3 4 5; do campaign "$here/a100-resubmit-r$n.campaign"; done ;;
-    aprime) for n in 1 2; do campaign "$here/a100-aprime-r$n.campaign"; done ;;
-    tuned) for n in 1 2; do campaign "$here/a100-tuned-r$n.campaign"; done ;;
-    prtuned) for n in 1 2; do campaign "$here/a100-prtuned-r$n.campaign"; done ;;
+    resubmit) for n in 3 4 5; do campaign "$here/campaigns/a100-resubmit-r$n.campaign"; done ;;
+    aprime) for n in 1 2; do campaign "$here/campaigns/a100-aprime-r$n.campaign"; done ;;
+    tuned) for n in 1 2; do campaign "$here/campaigns/a100-tuned-r$n.campaign"; done ;;
+    prtuned) for n in 1 2; do campaign "$here/campaigns/a100-prtuned-r$n.campaign"; done ;;
     backend) bash "$here/probes.sh" backend ;;
     *) log "no block $name"; exit 2 ;;
   esac

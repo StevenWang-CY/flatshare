@@ -3,16 +3,16 @@
 How E2 is run, for a reader who measures a campaign or adds an arm. An E2 point is one arm file in [`arms/`](arms): the
 calls, the agent replay beside them, the gateway's configuration and the engine
 ([the arm file](../../python/flatshare_bench/README.md#e2-points)). `flatshare-bench e2 run` measures one point on cyan.
-A campaign file lists arm files, and `campaign.sh` measures them in order from a workstation with SSH to the hosts, as
-`deploy/deploy.sh` deploys.
+A campaign file in [`campaigns/`](campaigns) lists arm files, and `campaign.sh` measures them in order from a
+workstation with SSH to the hosts, as `deploy/deploy.sh` deploys.
 
 ```sh
 # your SSH command for the hosts, as for deploy.sh
 export FLATSHARE_SSH="ssh -F $HOME/.ssh/flatshare_config"
 # check every arm file; list the points and engines
-benchmarks/e2/campaign.sh --dry-run benchmarks/e2/w2.campaign
+benchmarks/e2/campaign.sh --dry-run benchmarks/e2/campaigns/w2.campaign
 # measure, then pause the GPU node
-benchmarks/e2/campaign.sh --pause benchmarks/e2/w2.campaign
+benchmarks/e2/campaign.sh --pause benchmarks/e2/campaigns/w2.campaign
 ```
 
 A line of a campaign file can also set, for all its points:
@@ -57,8 +57,8 @@ node's points, so each node's rounds are campaign files of their own. Gray needs
   (`deploy/authorize-tunnel.sh cyan gray`);
 - on cyan, `~/.config/flatshare/tunnel-gray.env` with `FLATSHARE_TUNNEL_TARGET=<user>@<gray's host>`.
 
-[`gray-smoke.campaign`](gray-smoke.campaign) checks Gray end to end, run as
-`FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --pause benchmarks/e2/gray-smoke.campaign`.
+[`gray-smoke.campaign`](campaigns/gray-smoke.campaign) checks Gray end to end, run as
+`FLATSHARE_GPU=gray benchmarks/e2/campaign.sh --pause benchmarks/e2/campaigns/gray-smoke.campaign`.
 
 **Points without calls.** An arm file with `[voice] callers = 0` and agent sessions measures the agents alone, as a card
 that serves no call runs them, over `[agents] window_s` after the warm-up. With `[engine] variant = "agents-only"` the
@@ -121,8 +121,8 @@ Each point keeps the gateway's request lines, the worker's journal and the GPU's
 
 By default a point runs 2 callers × 25 turns with barge-in on a quarter of them, beside AIPerf's replay of the 32×
 corpus with think times capped at 120 s, through the gateway as the `agents` tenant. The gateway "as configured" is
-`~/.config/flatshare/gateway.toml`, which sends each class's priority as `X-Vllm-Priority`. [`w2.campaign`](w2.campaign)
-holds the arms that depend on no other arm's result:
+`~/.config/flatshare/gateway.toml`, which sends each class's priority as `X-Vllm-Priority`.
+[`w2.campaign`](campaigns/w2.campaign) holds the arms that depend on no other arm's result:
 
 | Arm | Points | Engine | Gateway |
 |---|---|---|---|
@@ -145,8 +145,8 @@ The other arms start from a winner's arm file, with their own `arm` and `label`,
 | A factor | `[voice] preemptive_generation = false`, or `[voice] callers = 4` (6) |
 | The discriminating scenario | `[agents] sessions = 24` and `data = "weka-x32-long"` |
 
-W2's second batch ([`w2b.campaign`](w2b.campaign)) takes tuned vLLM, within noise of the best step-cap cell at 16
-sessions, as the engine of arms 5, 6 and 8. The admission arms wait at most 240 s, below the replay's 300 s request
+W2's second batch ([`w2b.campaign`](campaigns/w2b.campaign)) takes tuned vLLM, within noise of the best step-cap cell at
+16 sessions, as the engine of arms 5, 6 and 8. The admission arms wait at most 240 s, below the replay's 300 s request
 timeout. SMG 1.13.0 as shipped sizes its pool at 64 slots behind a vLLM worker and leaves 2 for the bulk class, where
 background requests go, so arm 8b caps the agents at 2 requests in flight.
 
@@ -162,7 +162,7 @@ Each campaign file opens with what it measures, and
 [EXPERIMENTS.md](../../docs/EXPERIMENTS.md#which-campaign-measured-what-on-which-code) gives the dates of the campaigns
 from W2 to OS. By campaign:
 
-| Campaign | Its files | What they measure | Records |
+| Campaign | Its files in `campaigns/` | What they measure | Records |
 |---|---|---|---|
 | W2 | `w2`, `w2b`, `w2c` | Every arm once in the standard scenario, then arms 4 to 8 in the discriminating one | [`2026-10-23-e2`](../results/2026-10-23-e2/README.md) |
 | W3–W4 | `a9`, `r1` to `r4`, `a9-standard`, `s1`, `s2`, `a9-window`, `upstream`, `upstream-r1`, `upstream-r2` | Arm 9 and its ablations, rounds of the headline configurations, arm 9 in the standard scenario, and the engine as the pull requests propose it | [`2026-10-23-e2`](../results/2026-10-23-e2/README.md) |
@@ -176,9 +176,10 @@ from W2 to OS. By campaign:
 | — | `gray-smoke`, `demo` | Gray end to end, and the demo video's two points | — |
 
 Rounds rotate their engine groups, so that no configuration always runs at the same hour. The A100 run's campaigns are
-in [`benchmarks/a100`](../a100), its records in [`2026-10-26-a100`](../results/2026-10-26-a100/README.md).
-`FLATSHARE_PROFILE` names the GPU node's hardware profile ([`deploy/profiles`](../../deploy/profiles)) when it is not
-the frozen box's, and the report then gives the points a workload of their own.
+in [`benchmarks/a100/campaigns`](../a100/campaigns), its records in
+[`2026-10-26-a100`](../results/2026-10-26-a100/README.md). `FLATSHARE_PROFILE` names the GPU node's hardware profile
+([`deploy/profiles`](../../deploy/profiles)) when it is not the frozen box's, and the report then gives the points a
+workload of their own.
 
 ## The headline configurations
 
@@ -238,14 +239,14 @@ and RS's in v1.3 (`flatshare-raw-records-rs.tar.gz`).
 
 ## The demo video
 
-The same caller on two engines while coding agents run. [`demo.campaign`](demo.campaign) measures tuned vLLM and the
-configuration to deploy in the discriminating scenario with its `save-audio` line, and [`demo.py`](demo.py) renders them
-from the calls' audio and turn times
+The same caller on two engines while coding agents run. [`demo.campaign`](campaigns/demo.campaign) measures tuned vLLM
+and the configuration to deploy in the discriminating scenario with its `save-audio` line, and [`demo.py`](demo.py)
+renders them from the calls' audio and turn times
 ([`flatshare-voice bots --save-audio`](../../python/flatshare_voice/README.md#measurement-callers)). On a workstation,
 with the two run directories fetched into one directory:
 
 ```sh
-benchmarks/e2/campaign.sh benchmarks/e2/demo.campaign
+benchmarks/e2/campaign.sh benchmarks/e2/campaigns/demo.campaign
 make demo-video DEMO=$FLATSHARE_E2_RESULTS/demo
 ```
 

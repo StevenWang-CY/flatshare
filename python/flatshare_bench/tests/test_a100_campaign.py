@@ -22,6 +22,7 @@ from flatshare_bench.e2.arm import load_arm
 
 REPO = Path(__file__).resolve().parents[3]
 A100 = REPO / "benchmarks" / "a100"
+CAMPAIGNS = A100 / "campaigns"
 DEPLOY = REPO / "deploy"
 FAKES = Path(__file__).parent / "fakes"
 
@@ -63,8 +64,8 @@ def sampling(path: Path) -> str | None:
 def test_the_marlin_point_runs_as_w5s_did_and_the_core_samples() -> None:
     # The Marlin point is read against W5's, which ran without the KV sampler; the A100's own points sample it,
     # for the running share its analysis reads.
-    assert sampling(A100 / "marlin-dry.campaign") == "0"
-    for path in A100.glob("a100-*.campaign"):
+    assert sampling(CAMPAIGNS / "marlin-dry.campaign") == "0"
+    for path in CAMPAIGNS.glob("a100-*.campaign"):
         assert sampling(path) is None, path.name
 
 
@@ -72,7 +73,7 @@ def test_the_cores_rounds_rotate_the_engines_with_no_switch_between_rounds() -> 
     previous = PR  # block 3 leaves the PRs' values running
     w5 = {"w5-disc-pr-ab48-s24.toml", "w5-disc-frozen-s24.toml", "w5-a1-voice.toml"}
     for n in range(1, 6):
-        seed, arms = campaign(A100 / f"a100-r{n}.campaign")
+        seed, arms = campaign(CAMPAIGNS / f"a100-r{n}.campaign")
         assert seed == 10 + n
         assert {arm.name for arm in arms} == w5 and all(arm.parent.name == "arms" for arm in arms)
         engines = [str(load_arm(arm).engine) for arm in arms]
@@ -83,7 +84,7 @@ def test_the_cores_rounds_rotate_the_engines_with_no_switch_between_rounds() -> 
         previous = engines[-1]
 
 
-@pytest.mark.parametrize("path", sorted(A100.glob("*.campaign")), ids=lambda p: p.name)
+@pytest.mark.parametrize("path", sorted(CAMPAIGNS.glob("*.campaign")), ids=lambda p: p.name)
 def test_every_campaign_names_arm_files_that_load(path: Path) -> None:
     seed, arms = campaign(path)
     assert arms and seed is not None
@@ -105,13 +106,13 @@ def test_a_prime_is_the_cores_arms_at_32_sessions() -> None:
             b.agents.data,
             b.arm,
         )
-    seeds = [campaign(A100 / f"a100-aprime-r{n}.campaign")[0] for n in (1, 2)]
-    resubmit = [campaign(A100 / f"a100-resubmit-r{n}.campaign")[0] for n in (3, 4, 5)]
+    seeds = [campaign(CAMPAIGNS / f"a100-aprime-r{n}.campaign")[0] for n in (1, 2)]
+    resubmit = [campaign(CAMPAIGNS / f"a100-resubmit-r{n}.campaign")[0] for n in (3, 4, 5)]
     assert seeds == [11, 12] and resubmit == [13, 14, 15]
     # Each round pairs the two engines on its sample; voice alone, the SLO's reference, is the core's five points on
     # the same host, which flatshare-bench e2 report reads for every point of that hardware.
     for n in (1, 2):
-        arms = {arm.name for arm in campaign(A100 / f"a100-aprime-r{n}.campaign")[1]}
+        arms = {arm.name for arm in campaign(CAMPAIGNS / f"a100-aprime-r{n}.campaign")[1]}
         assert arms == {"a100-aprime-frozen-s32.toml", "a100-aprime-pr-ab48-s32.toml"}, n
 
 
@@ -130,8 +131,8 @@ def test_tuned_vllm_is_the_cores_frozen_point_at_the_probes_best_cap_on_the_core
         frozen.agents.data,
     )
     for n in (1, 2):
-        seed, arms = campaign(A100 / f"a100-tuned-r{n}.campaign")
-        assert seed == campaign(A100 / f"a100-r{n}.campaign")[0] == 10 + n
+        seed, arms = campaign(CAMPAIGNS / f"a100-tuned-r{n}.campaign")
+        assert seed == campaign(CAMPAIGNS / f"a100-r{n}.campaign")[0] == 10 + n
         assert [arm.name for arm in arms] == ["a100-tuned-s24.toml"], n
 
 
@@ -159,8 +160,8 @@ def test_the_prs_at_the_a100s_best_cap_are_the_cores_pr_point_at_tuned_vllms_cap
     )
     assert "vLLM PRs A and B with a 48-token window" in ours.label
     for n in (1, 2):
-        seed, arms = campaign(A100 / f"a100-prtuned-r{n}.campaign")
-        assert seed == campaign(A100 / f"a100-tuned-r{n}.campaign")[0] == 10 + n
+        seed, arms = campaign(CAMPAIGNS / f"a100-prtuned-r{n}.campaign")
+        assert seed == campaign(CAMPAIGNS / f"a100-tuned-r{n}.campaign")[0] == 10 + n
         assert [arm.name for arm in arms] == ["a100-pr-ab48-2048-s24.toml"], n
 
 

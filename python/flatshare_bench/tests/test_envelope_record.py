@@ -39,7 +39,9 @@ def test_every_round_ran_its_campaigns_points() -> None:
     rows = table.points()
     for name in table.ROUNDS:
         listed = re.findall(
-            r"^arms/(\S+)\.toml$", (REPO / "benchmarks/e2" / f"{name}.campaign").read_text(), re.M
+            r"^\.\./arms/(\S+)\.toml$",
+            (REPO / "benchmarks/e2/campaigns" / f"{name}.campaign").read_text(),
+            re.M,
         )
         assert sorted(point for campaign, point in rows if campaign == name) == sorted(listed), name
 

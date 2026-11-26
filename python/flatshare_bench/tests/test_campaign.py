@@ -343,7 +343,7 @@ def test_points_lists_a_campaigns_points_and_reaches_no_host(hosts: Hosts) -> No
 
 
 def test_campaign_sh_reads_the_demo_campaign(hosts: Hosts) -> None:
-    done = hosts.run(REPO / "benchmarks" / "e2" / "demo.campaign", "--dry-run")
+    done = hosts.run(REPO / "benchmarks" / "e2" / "campaigns" / "demo.campaign", "--dry-run")
     assert done.returncode == 0, done.stdout + done.stderr
     assert "2 points, arm files at" in done.stdout and "the calls' audio saved" in done.stdout
 
@@ -357,7 +357,9 @@ def test_without_a_seed_line_each_point_keeps_its_arm_files_seed(hosts: Hosts) -
 
 @pytest.mark.parametrize("round", range(1, 6))
 def test_campaign_sh_reads_each_w5_round(hosts: Hosts, round: int) -> None:
-    done = hosts.run(REPO / "benchmarks" / "e2" / f"w5-r{round}.campaign", "--dry-run")
+    done = hosts.run(
+        REPO / "benchmarks" / "e2" / "campaigns" / f"w5-r{round}.campaign", "--dry-run"
+    )
     assert done.returncode == 0, done.stdout + done.stderr
     assert (
         "4 points, arm files at" in done.stdout and f"the agents' seed {10 + round}" in done.stdout

@@ -147,11 +147,11 @@ beside 24 agent sessions with 2, 4 and 6 callers, and voice alone with as many c
 
 | | |
 |---|---|
-| The rounds | [`benchmarks/e2/opt-r1.campaign`](../../e2/opt-r1.campaign) to `opt-r5.campaign`, seeds 31 to 35, each round's engine groups in an order rotated from the round before |
+| The rounds | [`benchmarks/e2/opt-r1.campaign`](../../e2/campaigns/opt-r1.campaign) to `opt-r5.campaign`, seeds 31 to 35, each round's engine groups in an order rotated from the round before |
 | The release | v1.14-5-gfa69919 on cyan, Phastform and Gray for every round |
 | v1.14's configuration | `sweep-disc-pr-ab48-b256-t0-s24`, `opt-disc-b256-c4-s24`, `opt-disc-b256-c6-s24`, `opt-std-b256-s16` |
 | The first four additions | `opt-disc-ret-s24`, `opt-disc-ret-c4-s24`, `opt-disc-ret-c6-s24`, `opt-std-ret-s16`: the same with `make_room.retain_tokens 3584`, `retain_s 30`, `hint_hold_ms 400`, `take_reservations true`, the serve module's scheduler with a 30 ms margin, and the voice worker's `turn_hints` |
-| The follow-up rounds | [`opt-s1.campaign`](../../e2/opt-s1.campaign) and [`opt-s2.campaign`](../../e2/opt-s2.campaign), seeds 36 and 37, on v1.14-10-g51b5a02 on cyan, Phastform and Gray: `opt-disc-ret-*`, `opt-disc-hold-*` (+ `make_room.decode_hold_tokens 48`) and `opt-disc-spec-*` (+ EAGLE-3 with 2 drafts, `make_room.recompute_tokens 256`, `--kv-cache-memory 5517000000`), at 2, 4 and 6 callers, with voice alone at each count |
+| The follow-up rounds | [`opt-s1.campaign`](../../e2/campaigns/opt-s1.campaign) and [`opt-s2.campaign`](../../e2/campaigns/opt-s2.campaign), seeds 36 and 37, on v1.14-10-g51b5a02 on cyan, Phastform and Gray: `opt-disc-ret-*`, `opt-disc-hold-*` (+ `make_room.decode_hold_tokens 48`) and `opt-disc-spec-*` (+ EAGLE-3 with 2 drafts, `make_room.recompute_tokens 256`, `--kv-cache-memory 5517000000`), at 2, 4 and 6 callers, with voice alone at each count |
 | The SLO | A reply is over it when its voice-to-voice time exceeds the same round's voice alone with as many callers, plus 250 ms ([RESOURCE-GATE.md](../../quality/RESOURCE-GATE.md)) |
 
 ## Files

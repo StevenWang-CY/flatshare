@@ -1040,15 +1040,17 @@ def test_a_campaign_whose_points_are_complete_completes_its_block_whatever_it_se
     tree = tmp_path / "tree"
     for path in (
         "benchmarks/a100/run.sh",
-        "benchmarks/a100/a100-tuned-r2.campaign",
+        "benchmarks/a100/campaigns/a100-tuned-r2.campaign",
         "benchmarks/a100/arms/a100-tuned-s24.toml",
         "benchmarks/e2/campaign.sh",
         "deploy/bin/flatshare-local",
     ):
         (tree / path).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(REPO / path, tree / path)
-    r1 = (REPO / "benchmarks" / "a100" / "a100-tuned-r1.campaign").read_text() + "save-audio\n"
-    (tree / "benchmarks" / "a100" / "a100-tuned-r1.campaign").write_text(r1)
+    r1 = (
+        REPO / "benchmarks" / "a100" / "campaigns" / "a100-tuned-r1.campaign"
+    ).read_text() + "save-audio\n"
+    (tree / "benchmarks" / "a100" / "campaigns" / "a100-tuned-r1.campaign").write_text(r1)
     done = subprocess.run(
         ["bash", str(tree / "benchmarks" / "a100" / "run.sh"), "--estimate", "tuned=28", "tuned"],
         env=env,

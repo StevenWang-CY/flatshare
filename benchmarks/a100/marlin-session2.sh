@@ -8,7 +8,7 @@
 #      16,384 tokens (vLLM refuses a pool that cannot hold one request at max_model_len), the KV case, the prefill
 #      case and a 120 s tail once each, which size themselves from the smaller pool and context; the context is in
 #      vLLM's compile hash, so this start compiles
-#   3. one E2 point on Marlin, benchmarks/a100/marlin-dry.campaign through benchmarks/e2/campaign.sh
+#   3. one E2 point on Marlin, benchmarks/a100/campaigns/marlin-dry.campaign through benchmarks/e2/campaign.sh
 #   4. the frozen engine back
 # The outputs stay on Phastform under ~/flatshare/runs/marlin-dry (the point's on cyan, as a campaign's) and are
 # copied to FLATSHARE_OUT (default ~/flatshare/hosts/marlin-dry); a step whose outputs are there is skipped.
@@ -63,7 +63,7 @@ probe tail tail.py 120 pool fresh --reply 40
 
 # 3. One E2 point on Marlin, as campaign.sh measures one.
 log "E2: marlin-dry.campaign"
-bash "$here/../e2/campaign.sh" "$here/marlin-dry.campaign" 2>&1 | tee -a "$out/session.log"
+bash "$here/../e2/campaign.sh" "$here/campaigns/marlin-dry.campaign" 2>&1 | tee -a "$out/session.log"
 
 # 4. Back to the frozen box.
 log "engine: frozen"

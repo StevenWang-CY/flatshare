@@ -121,7 +121,7 @@ deadline sits near the real step's end. The profile keeps the behaviour it was m
 
 ## Files
 
-- `env-r1`, `env-r2`, `env-r3`: version 1.24's rounds ([env-r1.campaign](../../e2/env-r1.campaign) and the next two).
+- `env-r1`, `env-r2`, `env-r3`: version 1.24's rounds ([env-r1.campaign](../../e2/campaigns/env-r1.campaign) and the next two).
   `env-r1` and `env-r2` ran the release candidate at c445329. `env-r3` ran a working commit of the release's branch,
   254bc89 in its `run.json` (`versions.source`), since a release of c445329 built from another worktree would not deploy
   over the one already on the hosts. Its serve module and the three it installs from are c445329's code with only their

@@ -178,7 +178,7 @@ the requirement of at most 5% over; the change's consolidated card meets it at f
 
 ## How it ran
 
-- **The rounds** ([`benchmarks/e2`](../../e2): `rg-r1.campaign` to `rg-r5.campaign`), each on a fresh sample of the
+- **The rounds** ([`benchmarks/e2/campaigns`](../../e2/campaigns): `rg-r1.campaign` to `rg-r5.campaign`), each on a fresh sample of the
   agents' traces (seeds 21 to 25), each on one GPU node, the nodes swapped from round to round: Gray in rounds 2 and 4;
   Phastform in rounds 1, 3 and 5. Each round runs its engine groups in an order rotated from the round before. Every
   point is E2's: two callers (one, for a pooled card), 25 turns each after a warm-up turn, beside the session trees of

@@ -79,6 +79,7 @@ FAKES = Path(__file__).parent / "fakes"
 REPO = Path(__file__).resolve().parents[3]
 EXAMPLE = REPO / "deploy" / "cyan" / "gateway.example.toml"
 BENCHMARKS = REPO / "benchmarks" / "e2"
+CAMPAIGNS = BENCHMARKS / "campaigns"
 RESULTS = REPO / "benchmarks" / "results" / "2026-10-23-e2"
 PHASTFORM = REPO / "deploy" / "phastform"
 needs_waitid = pytest.mark.skipif(not hasattr(os, "waitid"), reason=tools.NEEDS_WAITID)
@@ -253,7 +254,7 @@ def campaign_lines(campaign: Path) -> list[str]:
 
 
 def test_the_campaigns_name_arm_files_that_load() -> None:
-    campaigns = sorted(BENCHMARKS.glob("*.campaign"))
+    campaigns = sorted(CAMPAIGNS.glob("*.campaign"))
     assert campaigns
     for campaign in campaigns:
         lines = campaign_lines(campaign)
@@ -341,7 +342,7 @@ W4 = {
 
 
 def test_the_w5_campaign_rotates_its_four_configurations_over_five_seeded_rounds() -> None:
-    rounds = [campaign_lines(BENCHMARKS / f"w5-r{r}.campaign") for r in range(1, 6)]
+    rounds = [campaign_lines(CAMPAIGNS / f"w5-r{r}.campaign") for r in range(1, 6)]
     assert [lines[0] for lines in rounds] == [f"agents-seed {seed}" for seed in range(11, 16)]
     orders = [[Path(line).stem for line in lines[1:]] for lines in rounds]
     assert all(sorted(order) == sorted(W5) for order in orders)
@@ -372,7 +373,7 @@ W5_PR_ROUNDS = ("w5-disc-frozen-s24", *W5_PR, "w5-disc-pr-ab48-s24")
 
 
 def test_the_w5_pr_campaign_rotates_the_prs_configurations_beside_the_frozen_box() -> None:
-    rounds = [campaign_lines(BENCHMARKS / f"w5-pr-r{r}.campaign") for r in range(1, 6)]
+    rounds = [campaign_lines(CAMPAIGNS / f"w5-pr-r{r}.campaign") for r in range(1, 6)]
     assert [lines[0] for lines in rounds] == [f"agents-seed {seed}" for seed in range(11, 16)]
     orders = [[Path(line).stem for line in lines[1:]] for lines in rounds]
     assert orders[0] == list(W5_PR_ROUNDS)
@@ -409,7 +410,7 @@ W5_EXT_GROUPS = (
 
 
 def test_the_w5_extension_rotates_its_engine_groups_over_w5s_seeds() -> None:
-    rounds = [campaign_lines(BENCHMARKS / f"w5-ext-r{r}.campaign") for r in range(1, 6)]
+    rounds = [campaign_lines(CAMPAIGNS / f"w5-ext-r{r}.campaign") for r in range(1, 6)]
     assert [lines[0] for lines in rounds] == [f"agents-seed {seed}" for seed in range(11, 16)]
     orders = [[Path(line).stem for line in lines[1:]] for lines in rounds]
     for r, order in enumerate(orders):
@@ -444,7 +445,7 @@ W5_CAP = {
 
 
 def test_the_calls_per_gpu_rounds_alternate_their_engine_groups_and_caller_counts() -> None:
-    rounds = [campaign_lines(BENCHMARKS / f"w5-cap-r{r}.campaign") for r in range(1, 4)]
+    rounds = [campaign_lines(CAMPAIGNS / f"w5-cap-r{r}.campaign") for r in range(1, 4)]
     assert [lines[0] for lines in rounds] == [f"agents-seed {seed}" for seed in range(11, 14)]
     orders = [[Path(line).stem for line in lines[1:]] for lines in rounds]
     assert all(sorted(order) == sorted(W5_CAP) for order in orders)
@@ -471,7 +472,7 @@ RS = ("w5-disc-frozen-s24", "w5-disc-pr-ab48-s24")
 def test_rs_samples_the_kv_beside_w5s_two_configurations_in_alternating_order() -> None:
     # RS measures the box's running share as the A100's core measured its own: W5's arm files, round N on
     # the agents' sample of W5's round N, the engine's free KV sampled every 0.5 s.
-    rounds = [campaign_lines(BENCHMARKS / f"rs-r{r}.campaign") for r in range(1, 6)]
+    rounds = [campaign_lines(CAMPAIGNS / f"rs-r{r}.campaign") for r in range(1, 6)]
     assert [lines[:2] for lines in rounds] == [
         [f"agents-seed {seed}", "kv-sample-s 0.5"] for seed in range(11, 16)
     ]

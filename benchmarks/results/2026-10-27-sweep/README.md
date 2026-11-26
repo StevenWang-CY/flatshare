@@ -4,7 +4,7 @@ W5 measured the change at the box's step cap of the time, 512 tokens, where stoc
 change never ran ([BENCHMARKS](../../../docs/BENCHMARKS.md)). The sweep runs the change, and stock vLLM beside it, over
 the step cap, the long-prefill threshold, the first-tokens window and the gateway's static cap on background requests,
 first as two screens on the sample of the agents that W5 tuned on (seed 11), then on fresh samples in five rounds
-([`rg-r1`](../../e2/rg-r1.campaign) to [`rg-r5`](../../e2/rg-r5.campaign),
+([`rg-r1`](../../e2/campaigns/rg-r1.campaign) to [`rg-r5`](../../e2/campaigns/rg-r5.campaign),
 [their record](../2026-10-28-rounds/README.md)), which confirm or overturn what the screens pick. These are the
 screens' records.
 
@@ -76,7 +76,7 @@ reported `EngineDeadError`: "an illegal memory access was encountered" the first
 synchronization rather than in the kernel that made it, so the journals do not name the kernel:
 [`fp8-journal-1.txt`](fp8-journal-1.txt) and [`fp8-journal-2.txt`](fp8-journal-2.txt) hold the engine's lines from
 its start to its death, home directories written as `~`. The second run is
-[`fp8-repro.campaign`](../../e2/fp8-repro.campaign); its campaign file was a copy outside the repository, so its
+[`fp8-repro.campaign`](../../e2/campaigns/fp8-repro.campaign); its campaign file was a copy outside the repository, so its
 `campaign.log` names no revision for its arm file, and `arm.toml` is the arm it ran. Each run was stopped once its
 engine had died, since its turns then failed one by one at the reply timeout, so neither has a summary.
 
